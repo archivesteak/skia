@@ -65,28 +65,6 @@ def ninja_path(host):
   return os.path.join('third_party', 'ninja', 'ninja.exe' if host == 'windows' else 'ninja')
 
 
-def apply_mingw_patches(skia_dir):
-  """Applies MinGW fixes to nested deps that are not part of this fork.
-
-  git-sync-deps fetches a pristine partition_alloc (pinned in DEPS), so the
-  MinGW fixes for it live in tools/skia_release/mingw-partition-alloc.patch
-  and are (re)applied here, idempotently.
-  """
-  patch = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       'mingw-partition-alloc.patch')
-  pa_dir = skia_dir / 'third_party' / 'externals' / 'partition_alloc'
-  if not pa_dir.is_dir():
-    raise RuntimeError('partition_alloc checkout not found at ' + str(pa_dir))
-  if subprocess.run(['git', 'apply', '--check', patch], cwd=pa_dir).returncode == 0:
-    print('> Applying MinGW partition_alloc patch')
-    subprocess.check_call(['git', 'apply', patch], cwd=pa_dir)
-  elif subprocess.run(['git', 'apply', '--reverse', '--check', patch],
-                      cwd=pa_dir).returncode == 0:
-    pass  # already applied
-  else:
-    raise RuntimeError('Cannot apply ' + patch + ' in ' + str(pa_dir))
-
-
 def main():
   skia_dir = common.skia_dir()
   os.chdir(skia_dir)
@@ -96,8 +74,6 @@ def main():
   machine = common.machine()
   host = common.host()
   target = common.target()
-  if target == 'mingw':
-    apply_mingw_patches(skia_dir)
   ndk = common.ndk()
   gpu_as_extension = common.gpu_as_extension()
   enable_ganesh = common.enable_ganesh()
