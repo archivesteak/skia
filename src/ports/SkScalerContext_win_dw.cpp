@@ -1731,7 +1731,13 @@ bool SkScalerContext_DW::generatePngMetrics(const SkGlyph& glyph, SkRect* bounds
     }
 
     DWRITE_GLYPH_IMAGE_FORMATS imageFormats;
+#if defined(__MINGW32__)
+    // mingw-w64's dwrite_3.h keeps the raw IDL name (trailing underscore) for
+    // the 4-argument form; the underscore-free name is the 0-arg convenience.
+    HRBM(fontFace4->GetGlyphImageFormats_(glyph.getGlyphID(), 0, UINT32_MAX, &imageFormats),
+#else
     HRBM(fontFace4->GetGlyphImageFormats(glyph.getGlyphID(), 0, UINT32_MAX, &imageFormats),
+#endif
          "Cannot get glyph image formats.");
     if (!(imageFormats & DWRITE_GLYPH_IMAGE_FORMATS_PNG)) {
         return false;
@@ -2279,7 +2285,13 @@ bool SkScalerContext_DW::drawSVGImage(const SkGlyph& glyph, SkCanvas& canvas) {
     }
 
     DWRITE_GLYPH_IMAGE_FORMATS imageFormats;
+#if defined(__MINGW32__)
+    // mingw-w64's dwrite_3.h keeps the raw IDL name (trailing underscore) for
+    // the 4-argument form; the underscore-free name is the 0-arg convenience.
+    HRBM(fontFace4->GetGlyphImageFormats_(glyph.getGlyphID(), 0, UINT32_MAX, &imageFormats),
+#else
     HRBM(fontFace4->GetGlyphImageFormats(glyph.getGlyphID(), 0, UINT32_MAX, &imageFormats),
+#endif
          "Cannot get glyph image formats.");
     if (!(imageFormats & DWRITE_GLYPH_IMAGE_FORMATS_SVG)) {
         return false;

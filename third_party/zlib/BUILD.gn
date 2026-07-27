@@ -37,7 +37,7 @@ if (skia_use_system_zlib) {
   config("zlib_adler32_simd_config") {
     if (use_x86_x64_optimizations) {
       defines = [ "ADLER32_SIMD_SSSE3" ]
-      if (is_win) {
+      if (is_win && !is_mingw) {
         defines += [ "X86_WINDOWS" ]
       } else {
         defines += [ "X86_NOT_WINDOWS" ]

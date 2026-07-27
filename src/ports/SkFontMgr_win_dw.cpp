@@ -146,8 +146,12 @@ private:
     sk_sp<SkTypeface> layoutFallback(const WCHAR* dwFamilyName, DWriteStyle,
                                      const WCHAR* dwBcp47, UINT32 character,
                                      DWRITE_FONT_SIMULATIONS allowedSimulations) const;
+    // mingw-w64 headers define a non-constexpr operator| for this enum,
+    // so spell it as integer math, which is constexpr everywhere.
     static constexpr DWRITE_FONT_SIMULATIONS kDefaultSimulations =
-            DWRITE_FONT_SIMULATIONS_BOLD | DWRITE_FONT_SIMULATIONS_OBLIQUE;
+            static_cast<DWRITE_FONT_SIMULATIONS>(
+                static_cast<int>(DWRITE_FONT_SIMULATIONS_BOLD) |
+                static_cast<int>(DWRITE_FONT_SIMULATIONS_OBLIQUE));
 
     /** Creates a typeface using a typeface cache. */
     sk_sp<SkTypeface> makeTypefaceFromDWriteFont(IDWriteFontFace* fontFace,

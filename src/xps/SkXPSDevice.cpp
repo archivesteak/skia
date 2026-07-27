@@ -332,7 +332,9 @@ bool SkXPSDevice::endSheet() {
     return true;
 }
 
-static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
+// Not `static`: MSVC (and clang-cl) accept a static definition of a function
+// previously declared as a friend, but standard-conforming compilers reject it.
+HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
     //The CreateFontPackage API is only supported on desktop, not in UWP
     #if defined(SK_WINUWP)
     return E_NOTIMPL;

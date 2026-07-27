@@ -178,6 +178,21 @@ def main():
           'clang_win="' + os.path.dirname(os.path.dirname(clang_path)) + '"',
           'is_trivial_abi=false',
       ]
+  elif target == 'mingw':
+    # Kotlin/Native mingwX64-compatible build: llvm-mingw (clang in GCC mode,
+    # GNU ABI) instead of clang-cl/MSVC. No Direct3D for now (needs the MSVC
+    # Windows SDK); raster + WGL only.
+    triple = 'x86_64-w64-mingw32' if machine == 'x64' else 'aarch64-w64-mingw32'
+    args += [
+        'is_mingw=true',
+        'cc="clang"',
+        'cxx="clang++"',
+        'ar="llvm-ar"',
+        # mingw-w64 defaults to Win7 (0x0601); DirectWrite and partition_alloc
+        # need Win10 APIs.
+        'extra_cflags+=["--target=' + triple + '", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00"]',
+        'extra_ldflags=["--target=' + triple + '"]',
+    ]
   elif target == 'android':
     args += [
         'ndk="' + ndk + '"',

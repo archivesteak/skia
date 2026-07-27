@@ -47,7 +47,7 @@ declare_args() {
 
 # For 'shell' see https://ninja-build.org/manual.html#ref_rule_command
 if (host_os == "win") {
-  shell = "cmd.exe /c "
+  shell = "cmd.exe /v:on /c "
   stamp = "$shell echo >"
 } else {
   shell = ""
