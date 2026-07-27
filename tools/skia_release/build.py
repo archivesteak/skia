@@ -191,6 +191,11 @@ def main():
         # mingw-w64 defaults to Win7 (0x0601); DirectWrite and partition_alloc
         # need Win10 APIs.
         'extra_cflags+=["--target=' + triple + '", "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00"]',
+        # clang defaults to native TLS on Windows, but the MinGW libstdc++
+        # (both llvm-mingw's and the Kotlin/Native sysroot's) is built with
+        # emulated TLS, so e.g. std::__once_call only exists in its
+        # __emutls_v.* form there. Match the runtime's TLS model.
+        'extra_cflags+=["-femulated-tls"]',
         'extra_ldflags=["--target=' + triple + '"]',
     ]
   elif target == 'android':
