@@ -179,11 +179,18 @@ def main():
       ]
   elif target == 'mingw':
     # Kotlin/Native mingwX64-compatible build: llvm-mingw (clang in GCC mode,
-    # GNU ABI) instead of clang-cl/MSVC. No Direct3D for now (needs the MSVC
-    # Windows SDK); raster + WGL only.
+    # GNU ABI) instead of clang-cl/MSVC.
+    #
+    # All three GPU backends are built. Vulkan and Direct3D need no MSVC SDK:
+    # the Vulkan headers and the two memory allocators are vendored under
+    # third_party/externals, and mingw-w64 has shipped d3d12.h/dxgi1_6.h for
+    # years. Neither backend is gated on !is_mingw in GN — only on
+    # skia_enable_ganesh — so they build as they do for any other Windows host.
     triple = 'x86_64-w64-mingw32' if machine == 'x64' else 'aarch64-w64-mingw32'
     args += [
         'is_mingw=true',
+        'skia_use_vulkan=true',
+        'skia_use_direct3d=true',
         'cc="clang"',
         'cxx="clang++"',
         'ar="llvm-ar"',

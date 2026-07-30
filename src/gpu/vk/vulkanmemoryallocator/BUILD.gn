@@ -31,7 +31,9 @@ source_set("vulkanmemoryallocator") {
   ]
 
   # Warnings are just noise if we're not maintaining the code.
-  if (is_win) {
+  # The MinGW build targets Windows with clang driving in GCC mode, so it takes
+  # the GCC spelling even though is_win holds.
+  if (is_win && !is_mingw) {
     cflags = [ "/w" ]
   } else {
     cflags = [ "-w" ]
