@@ -125,6 +125,9 @@ def main():
         args += ['dawn_enable_metal=true']
     args += ['extra_cflags_cc+=["-frtti"]']
     args += ['skia_use_metal=true']
+    # Vulkan on Apple runs through MoltenVK. Metal remains the default there; this is for parity,
+    # so a caller that asks for Vulkan gets it rather than an error.
+    args += ['skia_use_vulkan=true']
     if is_ios:
       args += ['target_os="ios"']
       if is_ios_sim:
@@ -164,6 +167,9 @@ def main():
       args += ['dawn_enable_d3d11=true', 'dawn_enable_d3d12=true']
     args += [
         'skia_use_direct3d=true',
+        # Same three backends the MinGW build carries, so the shared GPU core has the same Skia
+        # underneath it whichever toolchain built the library.
+        'skia_use_vulkan=true',
         'extra_cflags+=["-DSK_FONT_HOST_USE_SYSTEM_SETTINGS"]',
     ]
     if host == 'windows':
