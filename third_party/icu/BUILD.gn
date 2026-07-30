@@ -20,7 +20,9 @@ if (skia_use_system_icu) {
     defines = [ "U_USING_ICU_NAMESPACE=0" ]
   }
 } else {
-  if (target_cpu == "wasm") {
+  # JB NOTE: MinGW joins wasm in using the C++ byte-array form. The assembly the other targets use
+  # is ELF-only (.note.GNU-stack, %progbits, .type ...,%object), which a PE/COFF assembler rejects.
+  if (target_cpu == "wasm" || is_mingw) {
     data_assembly = "$target_gen_dir/icudtl_dat.cpp"
   } else {
     data_assembly = "$target_gen_dir/icudtl_dat.S"
@@ -66,7 +68,7 @@ if (skia_use_system_icu) {
 
   # JB NOTE: we use _skiko suffix for ICU symbols to avoid the clashes with Apple SDK symbols
   action("make_data_assembly") {
-    if (target_cpu == "wasm") {
+    if (target_cpu == "wasm" || is_mingw) {
       _u_icu_version_major_num =
           "_skiko78"  # defined in source/common/unicode/uvernum.h
       script = "make_data_cpp.py"
@@ -151,7 +153,6 @@ if (skia_use_system_icu) {
     }
     sources = icu_sources
     if (is_win) {
-      deps = [ ":icudata" ]
       public_defines += [
         "U_NOEXCEPT=",
         "U_STATIC_IMPLEMENTATION",
@@ -161,6 +162,15 @@ if (skia_use_system_icu) {
       } else {
         libs = [ "Advapi32.lib" ]
       }
+    }
+    # JB NOTE: MinGW takes the data-assembly path rather than the MSVC one. Windows normally links
+    # ICU's stub data and loads icudtl.dat from next to the executable at runtime, but a
+    # Kotlin/Native binary has nowhere to ship that file to, and a failed load faults inside
+    # SkLoadICU's own error reporting. Embedding the data — what every non-Windows target already
+    # does, and what the GNU assembler in llvm-mingw handles fine — keeps the executable
+    # self-contained.
+    if (is_win && !is_mingw) {
+      deps = [ ":icudata" ]
       sources += [
         "../externals/icu/source/stubdata/stubdata.cpp",
         "SkLoadICU.cpp",
