@@ -5,8 +5,37 @@ import shutil
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import common
+
+
+SKIKO_WINDOWS_X64_STATIC_INPUTS = (
+    'skia',
+    'skia_ganesh_ext',
+    'svg',
+    'skparagraph',
+    'skshaper',
+    'skunicode_core',
+    'skunicode_icu',
+    'icu',
+    'harfbuzz',
+    'skresources',
+    'png',
+    'jpeg',
+    'webp',
+    'webp_sse41',
+    'zlib',
+    'expat',
+    'd3d12allocator',
+    'raw_ptr',
+    'allocator_core',
+    'allocator_base',
+)
+
+# These third-party GN targets deliberately retain their Unix-style `lib`
+# prefix under MSVC. Skiko's archive extraction strips it for consumers.
+MSVC_PREFIXED_STATIC_INPUTS = frozenset(('png', 'jpeg', 'webp', 'webp_sse41'))
 
 
 def git_sync_with_retries(skia_dir, max_retries=3, backoff_seconds=5):
@@ -27,36 +56,36 @@ def git_sync_with_retries(skia_dir, max_retries=3, backoff_seconds=5):
       time.sleep(wait)
 
 
-def patch_windows_toolchain(skia_dir):
-  toolchain_path = skia_dir / "gn" / "toolchain" / "BUILD.gn"
-  with toolchain_path.open("r", encoding="utf-8") as toolchain_file:
-    contents = toolchain_file.read()
-
-  patched = contents.replace(
-      'shell = "cmd.exe /c',
-      'shell = "cmd.exe /v:on /c',
-  ).replace(
-      r'env_setup = "$shell set \"PATH=%PATH%',
-      r'env_setup = "$shell set \"PATH=!PATH!',
-  )
-
-  if patched != contents:
-    with toolchain_path.open("w", encoding="utf-8") as toolchain_file:
-      toolchain_file.write(patched)
-
-
-def prepare_skia_checkout(skia_dir, target):
-  print("> Running tools/git-sync-deps")
+def prepare_skia_checkout(skia_dir):
   git_sync_with_retries(skia_dir)
 
   print("> Fetching ninja")
   subprocess.check_call([sys.executable, "bin/fetch-ninja"], cwd=skia_dir)
 
-  # Only the clang-cl/MSVC build uses this upstream toolchain patch. The MinGW target uses
-  # gcc_like, so mutating the dormant MSVC rules during that build is both unnecessary and leaves
-  # the checkout dirty.
-  if common.host() == 'windows' and target == 'windows':
-    patch_windows_toolchain(skia_dir)
+
+def verify_skiko_windows_x64_static_inputs(out, target):
+  """Fail when a Windows x64 Skia build cannot satisfy Skiko's nativeInputs."""
+  out = Path(out)
+  missing = []
+  for name in SKIKO_WINDOWS_X64_STATIC_INPUTS:
+    if target == 'mingw':
+      candidates = (out / f'lib{name}.a',)
+    elif target == 'windows':
+      prefix = 'lib' if name in MSVC_PREFIXED_STATIC_INPUTS else ''
+      candidates = (out / f'{prefix}{name}.lib',)
+    else:
+      raise ValueError(f'Unsupported Windows Skia target: {target}')
+
+    if not any(path.is_file() and path.stat().st_size > 0 for path in candidates):
+      missing.append(candidates[0].name)
+
+  if missing:
+    raise RuntimeError(
+        'Skiko Windows static input contract is incomplete in '
+        + str(out)
+        + ':\n  '
+        + '\n  '.join(missing)
+    )
 
 
 def ninja_path(host):
@@ -67,7 +96,7 @@ def main():
   skia_dir = common.skia_dir()
   os.chdir(skia_dir)
   target = common.target()
-  prepare_skia_checkout(skia_dir, target)
+  prepare_skia_checkout(skia_dir)
 
   build_type = common.build_type()
   machine = common.machine()
@@ -97,7 +126,6 @@ def main():
       'skia_use_system_libpng=false',
       'skia_use_system_libwebp=false',
       'skia_use_system_zlib=false',
-      'skia_use_system_freetype2=false',
       'skia_use_system_harfbuzz=false',
       'skia_pdf_subset_harfbuzz=true',
       'skia_use_system_icu=false',
@@ -105,6 +133,13 @@ def main():
       'extra_cflags=[]',
       'extra_cflags_cc=[]',
   ]
+
+  # The DirectWrite Windows configurations do not load FreeType's GN file, so
+  # this argument is undeclared there. Keep the upstream bundled-FreeType
+  # policy on every target that consumes it without emitting a false warning
+  # for either Windows ABI.
+  if target not in ('windows', 'mingw'):
+    args += ['skia_use_system_freetype2=false']
 
   if target == 'windows':
     args += ['extra_cflags+=["/clang:-fvisibility=default"]']
@@ -232,7 +267,6 @@ def main():
         'skia_use_webgl=true',
         'skia_use_piex=false',
         'skia_use_system_libpng=false',
-        'skia_use_system_freetype2=false',
         'skia_use_system_libjpeg_turbo=false',
         'skia_use_system_libwebp=false',
         'skia_enable_tools=false',
@@ -271,6 +305,8 @@ def main():
         ninja_targets.append('skia_graphite_dawn_ext')
 
   subprocess.check_call([ninja, '-C', out] + ninja_targets)
+  if machine == 'x64' and target in ('windows', 'mingw'):
+    verify_skiko_windows_x64_static_inputs(out, target)
   return 0
 
 

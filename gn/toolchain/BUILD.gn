@@ -47,7 +47,10 @@ declare_args() {
 
 # For 'shell' see https://ninja-build.org/manual.html#ref_rule_command
 if (host_os == "win") {
-  shell = "cmd.exe /c "
+  # Skiko's Windows release configuration deliberately uses delayed expansion.
+  # Keep that policy in the tracked GN input so successful and failed release
+  # builds use the same graph and never rewrite the checkout at build time.
+  shell = "cmd.exe /v:on /c "
   stamp = "$shell echo >"
 } else {
   shell = ""
