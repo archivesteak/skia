@@ -1,6 +1,7 @@
 #! /usr/bin/env python3
 
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -64,9 +65,30 @@ class WorkflowPublicationFreezeTest(unittest.TestCase):
     self.assertIn('    permissions:\n      contents: write\n', self.release_job)
 
   def test_all_actions_artifacts_expire_after_five_days(self):
-    uploads = self.workflow.count('uses: actions/upload-artifact@v4')
+    uploads = len(
+        re.findall(r'uses: actions/upload-artifact@[0-9a-f]{40}', self.workflow)
+    )
     self.assertEqual(6, uploads)
     self.assertEqual(uploads, self.workflow.count('retention-days: 5'))
+
+  def test_every_third_party_action_is_pinned_to_an_immutable_sha(self):
+    uses = re.findall(r'^\s*- uses: ([^\s#]+)', self.workflow, flags=re.MULTILINE)
+    self.assertTrue(uses)
+    for action in uses:
+      self.assertRegex(action, r'^[^@]+@[0-9a-f]{40}$')
+
+    expected_pins = {
+        'actions/checkout': '11d5960a326750d5838078e36cf38b85af677262',
+        'actions/upload-artifact': 'ea165f8d65b6e75b540449e92b4886f43607fa02',
+        'actions/download-artifact': 'd3f86a106a0bac45b974a628896c90dbdf5c8093',
+        'actions/setup-python': 'a26af69be951a213d495a4c3e4e4022e16d87065',
+        'microsoft/setup-msbuild': 'ede762b26a2de8d110bb5a3db4d7e0e080c0e917',
+        'ilammy/msvc-dev-cmd': '0b201ec74fa43914dc39ae48a89fd1d8cb592756',
+        'nttld/setup-ndk': 'ed92fe6cadad69be94a966a7ee3271275e62f779',
+        'addnab/docker-run-action': '4f65fabd2431ebc8d299f8e5a018d79a769ae185',
+    }
+    for action, sha in expected_pins.items():
+      self.assertIn(f'{action}@{sha}', uses)
 
   def test_only_approval_gated_job_can_invoke_release_uploader(self):
     self.assertNotIn('tools/skia_release/release_artifacts.py', self.workflow.split('\n  release:\n')[0])
@@ -83,56 +105,67 @@ class WorkflowPublicationFreezeTest(unittest.TestCase):
 
 
 class ReleaseArtifactsTest(unittest.TestCase):
-  def test_collects_and_sorts_valid_matrix_artifacts(self):
+  VERSION = 'm151-deadbeef00'
+
+  def _write_expected_matrix(self, artifact_dir, omitted=()):
+    names = release_artifacts.expected_release_artifact_names(self.VERSION) - set(omitted)
+    for name in names:
+      (artifact_dir / name).write_bytes(name.encode('utf-8'))
+    return names
+
+  def test_expected_matrix_has_all_32_build_outputs(self):
+    self.assertEqual(
+        32,
+        len(release_artifacts.expected_release_artifact_names(self.VERSION)),
+    )
+
+  def test_collects_and_sorts_complete_matrix(self):
     with tempfile.TemporaryDirectory() as temp_dir:
       artifact_dir = Path(temp_dir)
-      names = [
-          'Skia-m151-deadbeef00-android-Debug-arm64.zip',
-          'Skia-m151-deadbeef00-windows-Release-x64.zip',
-      ]
-      for name in reversed(names):
-        (artifact_dir / name).write_bytes(b'archive')
+      names = self._write_expected_matrix(artifact_dir)
 
       artifacts = release_artifacts.collect_release_artifacts(
           artifact_dir,
-          'm151-deadbeef00',
+          self.VERSION,
       )
-      self.assertEqual(names, [artifact.name for artifact in artifacts])
+      self.assertEqual(sorted(names), [artifact.name for artifact in artifacts])
 
   def test_rejects_unexpected_artifact_before_upload(self):
     with tempfile.TemporaryDirectory() as temp_dir:
       artifact_dir = Path(temp_dir)
-      (artifact_dir / 'Skia-m151-deadbeef00-windows-Release-x64.zip').write_bytes(b'archive')
-      (artifact_dir / 'Skia-m151-deadbeef00-windows-Release-x64-unsigned.zip').write_bytes(
+      self._write_expected_matrix(artifact_dir)
+      (artifact_dir / f'Skia-{self.VERSION}-windows-Release-x64-unsigned.zip').write_bytes(
           b'archive'
       )
 
-      with self.assertRaisesRegex(RuntimeError, 'Unexpected[\\s\\S]*unsigned.zip'):
-        release_artifacts.collect_release_artifacts(artifact_dir, 'm151-deadbeef00')
+      with self.assertRaisesRegex(RuntimeError, 'unexpected[\\s\\S]*unsigned.zip'):
+        release_artifacts.collect_release_artifacts(artifact_dir, self.VERSION)
 
-  def test_duplicate_assets_fail_before_any_upload(self):
+  def test_rejects_missing_matrix_artifact_before_upload(self):
     with tempfile.TemporaryDirectory() as temp_dir:
-      artifact = Path(temp_dir) / 'Skia-m151-deadbeef00-windows-Release-x64.zip'
-      artifact.write_bytes(b'archive')
-      release_record = {
-          'upload_url': 'https://uploads.github.test/assets{?name,label}',
-          'assets': [{'name': artifact.name}],
-      }
-      with mock.patch.dict(
-          os.environ,
-          {'SKIA_PUBLIC_RELEASE_APPROVAL': release.PUBLIC_RELEASE_APPROVAL},
-          clear=True,
-      ), mock.patch.object(release.common, 'github_headers', return_value={}), mock.patch.object(
-          release,
-          '_get_or_create_release',
-          return_value=release_record,
-      ), mock.patch.object(release.urllib.request, 'urlopen') as urlopen:
-        with self.assertRaisesRegex(RuntimeError, 'already exist'):
-          release.upload_release_artifacts([artifact], 'm151-deadbeef00')
-        urlopen.assert_not_called()
+      artifact_dir = Path(temp_dir)
+      missing = f'Skia-{self.VERSION}-windows-Release-x64.zip'
+      self._write_expected_matrix(artifact_dir, omitted=(missing,))
+
+      with self.assertRaisesRegex(RuntimeError, f'missing {re.escape(missing)}'):
+        release_artifacts.collect_release_artifacts(artifact_dir, self.VERSION)
 
 
 class ReleaseApiTest(unittest.TestCase):
+  VERSION = 'm151-deadbeef00'
+
+  def _artifact(self, directory, name, contents=b'archive'):
+    artifact = Path(directory) / name
+    artifact.write_bytes(contents)
+    return artifact
+
+  def _approval(self):
+    return mock.patch.dict(
+        os.environ,
+        {'SKIA_PUBLIC_RELEASE_APPROVAL': release.PUBLIC_RELEASE_APPROVAL},
+        clear=True,
+    )
+
   def test_non_404_lookup_failure_is_not_treated_as_missing_release(self):
     error = release.urllib.error.HTTPError(
         'https://api.github.test/releases/tags/m151-deadbeef00',
@@ -141,25 +174,17 @@ class ReleaseApiTest(unittest.TestCase):
         None,
         None,
     )
+    self.addCleanup(error.close)
     with mock.patch.object(
         release.common,
         'github_repo',
         return_value='archivesteak/skia',
-    ), mock.patch.object(release.urllib.request, 'urlopen', side_effect=error) as urlopen:
+    ), mock.patch.object(release, '_request_json', side_effect=error) as request:
       with self.assertRaises(release.urllib.error.HTTPError):
-        release._get_or_create_release('m151-deadbeef00', {})
-      self.assertEqual(1, urlopen.call_count)
+        release._find_release(self.VERSION, {})
+      self.assertEqual(1, request.call_count)
 
-  def test_404_lookup_creates_release_at_current_revision(self):
-    missing = release.urllib.error.HTTPError(
-        'https://api.github.test/releases/tags/m151-deadbeef00',
-        404,
-        'not found',
-        None,
-        None,
-    )
-    created = mock.Mock()
-    created.read.return_value = b'{"upload_url":"https://uploads.github.test/assets{?name,label}"}'
+  def test_new_release_is_created_as_draft(self):
     with mock.patch.object(
         release.common,
         'github_repo',
@@ -169,18 +194,115 @@ class ReleaseApiTest(unittest.TestCase):
         'current_revision',
         return_value='deadbeef00',
     ), mock.patch.object(
-        release.urllib.request,
-        'urlopen',
-        side_effect=(missing, created),
-    ) as urlopen:
-      record = release._get_or_create_release('m151-deadbeef00', {})
-      self.assertEqual(
-          'https://uploads.github.test/assets{?name,label}',
-          record['upload_url'],
-      )
-      self.assertEqual(2, urlopen.call_count)
-      create_request = urlopen.call_args_list[1].args[0]
-      self.assertIn(b'"target_commitish": "deadbeef00"', create_request.data)
+        release,
+        '_request_json',
+        return_value={'id': 7, 'draft': True},
+    ) as request:
+      release._create_draft_release(self.VERSION, {})
+      self.assertTrue(request.call_args.kwargs['payload']['draft'])
+      self.assertEqual('deadbeef00', request.call_args.kwargs['payload']['target_commitish'])
+
+  def test_failed_upload_leaves_draft_unpublished(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      artifact = self._artifact(temp_dir, f'Skia-{self.VERSION}-windows-Release-x64.zip')
+      draft = {
+          'id': 7,
+          'tag_name': self.VERSION,
+          'draft': True,
+          'upload_url': 'https://uploads.github.test/assets{?name,label}',
+      }
+      with self._approval(), mock.patch.object(
+          release.common,
+          'github_headers',
+          return_value={},
+      ), mock.patch.object(
+          release,
+          '_get_or_create_draft_release',
+          return_value=draft,
+      ), mock.patch.object(
+          release,
+          '_list_release_assets',
+          return_value=[],
+      ), mock.patch.object(
+          release,
+          '_upload_release_asset',
+          side_effect=RuntimeError('upload failed'),
+      ), mock.patch.object(release, '_publish_draft_release') as publish:
+        with self.assertRaisesRegex(RuntimeError, 'upload failed'):
+          release.stage_and_publish_release_artifacts([artifact], self.VERSION)
+        publish.assert_not_called()
+
+  def test_retry_resumes_verified_assets_and_replaces_only_stale_asset(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      first = self._artifact(temp_dir, f'Skia-{self.VERSION}-linux-Release-x64.zip', b'first')
+      second = self._artifact(temp_dir, f'Skia-{self.VERSION}-windows-Release-x64.zip', b'second')
+      draft = {
+          'id': 7,
+          'tag_name': self.VERSION,
+          'draft': True,
+          'upload_url': 'https://uploads.github.test/assets{?name,label}',
+      }
+      initial_assets = [
+          {'id': 11, 'name': first.name, 'state': 'uploaded', 'size': first.stat().st_size},
+          {'id': 12, 'name': second.name, 'state': 'starter', 'size': 0},
+      ]
+      verified_assets = [
+          {'id': 11, 'name': first.name, 'state': 'uploaded', 'size': first.stat().st_size},
+          {'id': 13, 'name': second.name, 'state': 'uploaded', 'size': second.stat().st_size},
+      ]
+      with self._approval(), mock.patch.object(
+          release.common,
+          'github_headers',
+          return_value={},
+      ), mock.patch.object(
+          release,
+          '_get_or_create_draft_release',
+          return_value=draft,
+      ), mock.patch.object(
+          release,
+          '_list_release_assets',
+          side_effect=(initial_assets, verified_assets),
+      ), mock.patch.object(release, '_delete_release_asset') as delete, mock.patch.object(
+          release,
+          '_upload_release_asset',
+      ) as upload, mock.patch.object(
+          release,
+          '_publish_draft_release',
+          return_value={'draft': False},
+      ) as publish:
+        release.stage_and_publish_release_artifacts([first, second], self.VERSION)
+        delete.assert_called_once_with(12, {})
+        upload.assert_called_once_with('https://uploads.github.test/assets', second, {})
+        publish.assert_called_once_with(7, {})
+
+  def test_incomplete_post_upload_verification_never_publishes(self):
+    with tempfile.TemporaryDirectory() as temp_dir:
+      artifact = self._artifact(temp_dir, f'Skia-{self.VERSION}-windows-Release-x64.zip')
+      draft = {
+          'id': 7,
+          'tag_name': self.VERSION,
+          'draft': True,
+          'upload_url': 'https://uploads.github.test/assets{?name,label}',
+      }
+      with self._approval(), mock.patch.object(
+          release.common,
+          'github_headers',
+          return_value={},
+      ), mock.patch.object(
+          release,
+          '_get_or_create_draft_release',
+          return_value=draft,
+      ), mock.patch.object(
+          release,
+          '_list_release_assets',
+          side_effect=([], []),
+      ), mock.patch.object(release, '_upload_release_asset'), mock.patch.object(
+          release,
+          '_publish_draft_release',
+      ) as publish:
+        with self.assertRaisesRegex(RuntimeError, 'missing'):
+          release.stage_and_publish_release_artifacts([artifact], self.VERSION)
+        publish.assert_not_called()
 
 
 if __name__ == '__main__':

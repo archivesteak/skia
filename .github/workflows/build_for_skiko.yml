@@ -33,7 +33,7 @@ jobs:
       release_approved: ${{ steps.mode.outputs.release_approved }}
       version: ${{ steps.version.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - id: milestone
@@ -86,14 +86,14 @@ jobs:
           - target: tvos
             machine: x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Print Xcode version
         run: xcodebuild -version
       - run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }} --gpu-as-extension --enable-graphite ${{ matrix.target == 'macos' && '--enable-graphite-dawn' || '' }}
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target ${{ matrix.target }} --machine ${{ matrix.machine }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-${{ matrix.target }}-${{ matrix.build_type }}-${{ matrix.machine }}.zip
           path: '*.zip'
@@ -108,13 +108,13 @@ jobs:
       matrix:
         build_type: [Debug, Release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - run: ./tools/skia_release/prepare_linux.sh
       - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite
       - run: PATH=/usr/lib/binutils-2.26/bin:$PATH python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-linux-${{ matrix.build_type }}-x64.zip
           path: '*.zip'
@@ -129,13 +129,13 @@ jobs:
       matrix:
         build_type: [Debug, Release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - run: ./tools/skia_release/prepare_linux_wasm.sh
       - run: python3 tools/skia_release/build.py --skia-dir . --target wasm --machine wasm --build-type ${{ matrix.build_type }} --gpu-as-extension --enable-graphite-dawn
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target wasm --machine wasm --build-type ${{ matrix.build_type }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-wasm-${{ matrix.build_type }}-wasm.zip
           path: '*.zip'
@@ -151,17 +151,17 @@ jobs:
         build_type: [Debug, Release]
         machine: ["x64", "arm64"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - run: ./tools/skia_release/prepare_linux.sh
-      - uses: nttld/setup-ndk@v1
+      - uses: nttld/setup-ndk@ed92fe6cadad69be94a966a7ee3271275e62f779 # v1
         id: setup-ndk
         with:
           ndk-version: r27d
       - run: python3 tools/skia_release/build.py --skia-dir . --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }} --ndk ${{ steps.setup-ndk.outputs.ndk-path }} --gpu-as-extension --enable-graphite
       - run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --target android --build-type ${{ matrix.build_type }} --machine ${{ matrix.machine }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-android-${{ matrix.build_type }}-${{ matrix.machine }}.zip
           path: '*.zip'
@@ -175,10 +175,10 @@ jobs:
       matrix:
         build_type: [Debug, Release]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: addnab/docker-run-action@v3
+      - uses: addnab/docker-run-action@4f65fabd2431ebc8d299f8e5a018d79a769ae185 # v3
         name: Assemble
         with:
           image: arm64v8/ubuntu:20.04
@@ -190,7 +190,7 @@ jobs:
             /bin/bash tools/skia_release/prepare_linux_arm.sh
             python3 tools/skia_release/build.py --skia-dir "${SKIA_BUILD_DIR}" --build-type "${BUILD_TYPE}" --target linux --machine arm64 --gpu-as-extension --enable-graphite
             python3 tools/skia_release/archive.py --skia-dir "${SKIA_BUILD_DIR}" --version "${BUILD_VERSION}" --build-type "${BUILD_TYPE}" --target linux --machine arm64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-linux-${{ matrix.build_type }}-arm64.zip
           path: '*.zip'
@@ -206,19 +206,19 @@ jobs:
         machine: ["x64", "arm64"]
     steps:
       - run: git config --global core.autocrlf input
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.9'
-      - uses: microsoft/setup-msbuild@v1
-      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: microsoft/setup-msbuild@ede762b26a2de8d110bb5a3db4d7e0e080c0e917 # v1
+      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
       - shell: bash
         run: python3 tools/skia_release/build.py --skia-dir . --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }} --gpu-as-extension --enable-graphite-dawn
       - shell: bash
         run: python3 tools/skia_release/archive.py --skia-dir . --version ${{ needs.prepare.outputs.version }} --build-type ${{ matrix.build_type }} --target windows --machine ${{ matrix.machine }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Skia-${{ needs.prepare.outputs.version }}-windows-${{ matrix.build_type }}-${{ matrix.machine }}.zip
           path: '*.zip'
@@ -231,10 +231,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: Skia-${{ needs.prepare.outputs.version }}-*
           path: release-artifacts
