@@ -14,12 +14,7 @@ def git_sync_with_retries(skia_dir, max_retries=3, backoff_seconds=5):
   while True:
     try:
       print("> Running tools/git-sync-deps (attempt {}/{})".format(attempt + 1, max_retries + 1))
-      if common.host() == 'windows':
-        env = os.environ.copy()
-        env['PYTHONHTTPSVERIFY'] = '0'
-        subprocess.check_call([sys.executable, "tools/git-sync-deps"], cwd=skia_dir, env=env)
-      else:
-        subprocess.check_call([sys.executable, "tools/git-sync-deps"], cwd=skia_dir)
+      subprocess.check_call([sys.executable, "tools/git-sync-deps"], cwd=skia_dir)
       print("Success")
       return
     except subprocess.CalledProcessError as error:
@@ -50,14 +45,17 @@ def patch_windows_toolchain(skia_dir):
       toolchain_file.write(patched)
 
 
-def prepare_skia_checkout(skia_dir):
+def prepare_skia_checkout(skia_dir, target):
   print("> Running tools/git-sync-deps")
   git_sync_with_retries(skia_dir)
 
   print("> Fetching ninja")
   subprocess.check_call([sys.executable, "bin/fetch-ninja"], cwd=skia_dir)
 
-  if common.host() == 'windows':
+  # Only the clang-cl/MSVC build uses this upstream toolchain patch. The MinGW target uses
+  # gcc_like, so mutating the dormant MSVC rules during that build is both unnecessary and leaves
+  # the checkout dirty.
+  if common.host() == 'windows' and target == 'windows':
     patch_windows_toolchain(skia_dir)
 
 
@@ -68,12 +66,12 @@ def ninja_path(host):
 def main():
   skia_dir = common.skia_dir()
   os.chdir(skia_dir)
-  prepare_skia_checkout(skia_dir)
+  target = common.target()
+  prepare_skia_checkout(skia_dir, target)
 
   build_type = common.build_type()
   machine = common.machine()
   host = common.host()
-  target = common.target()
   ndk = common.ndk()
   gpu_as_extension = common.gpu_as_extension()
   enable_ganesh = common.enable_ganesh()
@@ -126,9 +124,6 @@ def main():
         args += ['dawn_enable_metal=true']
     args += ['extra_cflags_cc+=["-frtti"]']
     args += ['skia_use_metal=true']
-    # Vulkan on Apple runs through MoltenVK. Metal remains the default there; this is for parity,
-    # so a caller that asks for Vulkan gets it rather than an error.
-    args += ['skia_use_vulkan=true']
     if is_ios:
       args += ['target_os="ios"']
       if is_ios_sim:
@@ -193,9 +188,12 @@ def main():
     # third_party/externals, and mingw-w64 has shipped d3d12.h/dxgi1_6.h for
     # years. Neither backend is gated on !is_mingw in GN — only on
     # skia_enable_ganesh — so they build as they do for any other Windows host.
-    triple = 'x86_64-w64-mingw32' if machine == 'x64' else 'aarch64-w64-mingw32'
+    if machine != 'x64':
+      raise ValueError('The mingw target is supported only for x64 (Kotlin/Native mingwX64)')
+    triple = 'x86_64-w64-mingw32'
     args += [
         'is_mingw=true',
+        'target_os="win"',
         'skia_use_vulkan=true',
         'skia_use_direct3d=true',
         'cc="clang"',
