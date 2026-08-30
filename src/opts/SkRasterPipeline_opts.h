@@ -1525,9 +1525,12 @@ static constexpr size_t N = sizeof(F) / sizeof(float);
     // We can still only pass 16 floats, so best as 4x {r,g,b,a}.
     #define ABI __attribute__((pcs("aapcs-vfp")))
     #define SKRP_NARROW_STAGES 1
-#elif defined(_MSC_VER)
-    // Even if not vectorized, this lets us pass {r,g,b,a} as registers,
-    // instead of {b,a} on the stack.  Narrow stages work best for __vectorcall.
+#elif defined(_MSC_VER) || (defined(_WIN32) && defined(__clang__))
+    // Windows uses the Microsoft x64 ABI even when Clang targets MinGW.  Use
+    // __vectorcall there as well: the generic x86_64 wide-stage ABI assumes
+    // the register-rich System V calling convention and corrupts stage
+    // arguments on non-trivial raster pipelines under the Windows ABI.
+    // Narrow stages work best for __vectorcall.
     #define ABI __vectorcall
     #define SKRP_NARROW_STAGES 1
 #elif defined(__x86_64__) || defined(SK_CPU_ARM64) || defined(SK_CPU_LOONGARCH)
