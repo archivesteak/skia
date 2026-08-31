@@ -7,9 +7,10 @@ audit of the fork delta, not a claim that untouched upstream Skia code was rewri
 
 - Upstream source base: `95f46ce146df43b17ce28450a2efddf607633f41`
   (`m151-95f46ce146`, a shallow/grafted base in this checkout).
-- Reviewed fork range: `95f46ce146..6bcb26f69`.
+- Reviewed fork range: `95f46ce146..d8481a3cf`.
 - Windows raster-pipeline ABI fix: `7753bd05b4aeeb1d5054aab155eb6de72092d654`.
-- Deterministic producer/fail-closed release tooling: `4094b3be1` and `6bcb26f69`.
+- Deterministic producer/fail-closed release tooling: `4094b3be1`, `6bcb26f69`, and
+  `d8481a3cf`.
 - Partition Allocator pin: fork commit `b2b6b07755defa7c608615a5720d48ed1a5ea040`,
   based directly on upstream `b1d0141bcecfda2bfd108882d818fc5df70ae5c7`.
 
@@ -84,12 +85,21 @@ The review covered every changed hunk in these files:
 - All eight third-party Actions are pinned to immutable commits verified against their official
   tag refs: checkout v4.4.0, upload-artifact v4.6.2, download-artifact v4.3.0, setup-python v5.6.0,
   setup-msbuild v1.3.3, msvc-dev-cmd v1.13.0, setup-ndk v1.6.0, and docker-run v3.
+- Every checkout disables persisted Git credentials. The separate Skia test workflow now has an
+  explicit read-only token and immutable action pins as well. Linux release containers use exact
+  amd64/arm64 Ubuntu image-manifest digests, and generic Ubuntu runner labels are versioned.
 - A durable GitHub Release requires manual dispatch, `should_release=true`, and the exact separate
   approval phrase. Only the approval-gated release job receives `contents: write`; the uploader
   rejects the same missing/incorrect approval before coordinate parsing or network access.
-- Publication requires the exact 32-artifact workflow matrix. Assets are uploaded sequentially to
-  a draft release, then names, sizes, and `uploaded` states are re-read and compared before the
-  release is made public. Upload or verification failure leaves a non-public draft.
+- Publication requires the exact 32-artifact workflow matrix. Every archive is opened, checked for
+  duplicate/unsafe/encrypted/symlink entries, and fully decompressed for CRC verification before
+  network access. Assets are uploaded sequentially to a draft release, then names, sizes,
+  GitHub-provided SHA-256 digests, and `uploaded` states are re-read and compared before the release
+  is made public. Upload or verification failure leaves a non-public draft.
+- The release version must be `m<milestone>-<10-char-source-SHA>`; manual dispatch takes precedence
+  over branch naming and both forms are validated. The draft and final release records must target
+  the exact full source commit. API and upload requests use finite timeouts, and upload URLs are
+  restricted to GitHub's HTTPS upload host.
 - Retries keep matching uploaded assets, replace only stale same-name draft assets, reject unknown
   extras, and publish only after the complete set verifies. An already-public complete release is
   treated idempotently; an incomplete public release fails closed. Single-asset publication is
@@ -107,12 +117,13 @@ The review covered every changed hunk in these files:
 - Both builds satisfied the raw 20-archive producer contract and left
   `gn/toolchain/BUILD.gn` byte-for-byte unchanged. The root MinGW wrapper also verified
   `libd3d12.a`; the MSVC wrapper verified all 20 normalized names.
-- `tools.skia_release.build_test` and `tools.skia_release.release_test`: 23 tests passed with
+- `tools.skia_release.build_test` and `tools.skia_release.release_test`: 33 tests passed with
   `ResourceWarning` promoted to an error. Coverage includes forced preparation failure,
   missing/empty archive aggregation, exact raw MSVC names, immutable Action pins, approval gates,
-  the exact 32-artifact matrix, draft-only failure behavior, retry cleanup, and refusal to publish
-  after incomplete verification.
-- `actionlint` v1.7.7 passed on `build_for_skiko.yml`; Python byte-compilation, YAML parsing,
+  the exact 32-artifact matrix, ZIP integrity/path/symlink rejection, source/target identity,
+  remote digest mismatch, finite network timeouts, draft-only failure behavior, retry cleanup, and
+  refusal to publish after incomplete verification.
+- `actionlint` v1.7.7 passed on both Skia workflows; Python byte-compilation, YAML parsing,
   `git diff --check`, and mutable-Action/remote-route scans passed.
 - Skiko `mingwX64Test` against this producer output: 286 tests in 57 suites, 0 failures, 0 errors,
   with 5 inherited skips. PNG/JPEG/WebP round trips, truncated/invalid inputs, setjmp/longjmp,
