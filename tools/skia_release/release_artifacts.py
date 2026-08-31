@@ -34,14 +34,33 @@ def expected_release_artifact_names(version):
 
 def collect_release_artifacts(artifact_dir, version):
   artifact_dir = Path(artifact_dir)
-  artifacts = sorted(artifact_dir.glob('*.zip'))
+  if artifact_dir.is_symlink() or not artifact_dir.is_dir():
+    raise RuntimeError(f'Skia release artifact path is not a directory: {artifact_dir}')
+  entries = list(artifact_dir.iterdir())
+  unsafe_entries = [
+      entry.name
+      for entry in entries
+      if entry.is_symlink() or not entry.is_file() or entry.suffix != '.zip'
+  ]
+  artifacts = sorted(
+      entry
+      for entry in entries
+      if entry.is_file() and not entry.is_symlink() and entry.suffix == '.zip'
+  )
   actual_names = {artifact.name for artifact in artifacts}
   expected_names = expected_release_artifact_names(version)
   missing = sorted(expected_names - actual_names)
   unexpected = sorted(actual_names - expected_names)
   issues = [f'missing {name}' for name in missing]
   issues.extend(f'unexpected {name}' for name in unexpected)
+  issues.extend(f'unexpected repository entry {name}' for name in sorted(unsafe_entries))
   issues.extend(f'empty {artifact.name}' for artifact in artifacts if artifact.stat().st_size == 0)
+  if not issues:
+    for artifact in artifacts:
+      try:
+        release.validate_zip_artifact(artifact)
+      except RuntimeError as error:
+        issues.append(str(error))
   if issues:
     raise RuntimeError(
         f'Skia release artifact matrix is incomplete in {artifact_dir}:\n  '
